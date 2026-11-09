@@ -143,6 +143,7 @@ The test suite has **not** been executed in the packaging environment, and integ
 │       ├── templates/
 │       └── static/
 ├── tests/
+├── demo
 └── docs/
     └── PUBLISHING_NOTES.md
 ```
@@ -158,6 +159,3 @@ This is an educational prototype and **must not be deployed as-is**:
 - The application and test suite have not been run end to end in the packaging environment; additional setup and debugging may be necessary.
 - UI images are retained from the submitted project files; confirm that you are entitled to redistribute them before publication.
 
-## Acknowledgements
-
-Developed collaboratively as a university coursework project. The project requirements were inspired by data-space principles and inter-institutional data exchange scenarios. Confirm permission from collaborators before publishing the shared source code or assigning individual contributions.
