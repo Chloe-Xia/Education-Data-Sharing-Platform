@@ -1,0 +1,289 @@
+{% extends "basic.html" %}
+{% block title %}Provider Dashboard{% endblock %}
+
+{% block content %}
+<h1>📘 Provider Dashboard</h1>
+
+<style>
+  body { font-family: Arial, sans-serif; }
+  form, .card { background: #f5f5f5; padding: 1em; border-radius: 8px; margin-bottom: 1.5em; }
+  input, textarea { width: 100%; margin-bottom: 0.75em; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; }
+  button {
+    background-color: #3949ab; color: white; border: none;
+    padding: 0.6em 1em; border-radius: 4px; cursor: pointer;
+    margin-right: 0.4em;
+  }
+  button:hover { background-color: #303f9f; }
+  .card-actions { margin-top: 0.5em; }
+</style>
+
+<!-- 📚 Add/Edit Course -->
+<h2>📚 Manage Courses</h2>
+<form id="course-form">
+  <input type="hidden" name="_id" id="course_id" />
+  <input type="text" name="title" placeholder="Course title" required />
+  <input type="text" name="units" placeholder="Units" required />
+  <textarea name="description" placeholder="Course description" required></textarea>
+  <button type="submit">Save Course</button>
+</form>
+<div id="course-list"></div>
+
+<!-- 🔧 Configure External Services -->
+<h2>🔧 Configure Services</h2>
+<form id="service-form">
+  <input type="text" name="service_name" placeholder="Service name" required />
+  <input type="text" name="base_url" placeholder="Base URL (e.g., http://...)" required />
+  <input type="text" name="path" placeholder="Path (e.g., /api/endpoint)" required />
+  <input type="text" name="method" placeholder="Method (GET/POST)" required />
+  <textarea name="input" placeholder="Input JSON schema" required></textarea>
+  <textarea name="output" placeholder="Output JSON schema (optional)"></textarea>
+  <button type="submit">Configure Service</button>
+</form>
+<div id="service-list"></div>
+
+<!-- 🧪 Test Result Modal -->
+<div id="test-result" style="white-space:pre-wrap; background:#e0e0e0; padding:1em; border-radius:8px; display:none; margin-top:1em;"></div>
+
+<script type="module">
+  const email = localStorage.getItem("user_email") || "alice_huang@uic.edu.cn";
+  let courseListDiv = document.getElementById("course-list");
+  let serviceListDiv = document.getElementById("service-list");
+
+  fetch("/api/public/services/uic", {
+    headers: {
+      "X-User-Email": email
+    }
+  })
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    const email = localStorage.getItem("user_email");
+    if (!email) {
+      alert("Not logged in!");
+      return;
+    }
+
+    // 显示用户信息
+    const username = email.split("@")[0].replace(/[_\.]/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+    const userDisplay = document.createElement("p");
+    userDisplay.innerHTML = `<b>👤 Logged in as:</b> ${username} (<i>${email}</i>)`;
+    document.querySelector("h1").after(userDisplay);
+
+    const container = document.getElementById("services-container");
+
+    try {
+      const res = await fetch("/api/consumer/services/available", {
+        headers: { "X-User-Email": email }
+      });
+      const services = await res.json();
+      if (!Array.isArray(services) || services.length === 0) {
+        container.innerHTML = "<p>No available services.</p>";
+        return;
+      }
+
+      container.innerHTML = "";
+      services.forEach(service => renderServiceCard(container, service, email));
+    } catch (err) {
+      container.innerHTML = `<p style="color:red;">Failed to load services: ${err}</p>`;
+    }
+  });
+  
+  window.editCourse = function(course) {
+    const form = document.getElementById("course-form");
+    form.course_id.value = course._id;
+    form.title.value = course.title;
+    form.units.value = course.units;
+    form.description.value = course.description;
+  };
+
+  window.deleteCourse = async function(courseId) {
+    if (!confirm("Delete this course?")) return;
+    const res = await fetch(`/api/datauser/course/${courseId}`, {
+      method: "DELETE",
+      headers: { "X-User-Email": email }
+    });
+    const result = await res.json();
+    alert(result.message || result.error);
+    loadCourses();
+  };
+
+  window.deleteService = async function(serviceName) {
+    if (!confirm("Delete this service?")) return;
+    const res = await fetch(`/api/datauser/service/${serviceName}`, {
+      method: "DELETE",
+      headers: { "X-User-Email": email }
+    });
+    const result = await res.json();
+    alert(result.message || result.error);
+    loadServices();
+  };
+
+  window.testService = async function(serviceName) {
+    const testInput = prompt("Enter test input JSON (e.g., {\"name\":\"Alice\",\"id\":\"123\"})");
+    if (!testInput) return;
+    try {
+      const res = await fetch(`/api/datauser/service/test/${serviceName}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Email": email
+        },
+        body: testInput
+      });
+      const result = await res.json();
+      document.getElementById("test-result").style.display = "block";
+      document.getElementById("test-result").textContent = JSON.stringify(result, null, 2);
+    } catch (err) {
+      alert("Test failed: " + err);
+    }
+  };
+
+  document.getElementById("course-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const form = e.target;
+
+    const title = form.title.value.trim();
+    const units = form.units.value.trim();
+    const description = form.description.value.trim();
+    const courseId = form.course_id.value.trim();
+
+    if (!title || !units || !description) {
+      alert("All fields are required.");
+      return;
+    }
+
+    const data = { title, units, description };
+
+    try {
+      const res = await fetch(courseId ? `/api/datauser/course/${courseId}` : "/api/datauser/course", {
+        method: courseId ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Email": email
+        },
+        body: JSON.stringify(data)
+      });
+
+      const result = await res.json();
+      alert(result.message || result.error);
+      form.reset();
+      document.getElementById("course_id").value = "";  // ✅ 清除编辑状态
+      loadCourses();
+    } catch (err) {
+      console.error("Submit error:", err);
+      alert("Course submission failed.");
+    }
+  });
+
+
+
+  document.getElementById("service-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const raw = Object.fromEntries(formData.entries());
+    let payload;
+    try {
+      payload = {
+        service_name: raw.service_name,
+        base_url: raw.base_url,
+        path: raw.path,
+        method: raw.method,
+        input: JSON.parse(raw.input),
+        output: raw.output ? JSON.parse(raw.output) : {}
+      };
+    } catch (err) {
+      alert("Invalid JSON in input/output");
+      return;
+    }
+
+    const res = await fetch("/api/datauser/service", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Email": email
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    alert(result.message || result.error);
+    e.target.reset();
+    loadServices();
+  });
+
+  async function loadCourses() {
+    const res = await fetch("/api/datauser/courses", {
+      headers: { "X-User-Email": email }
+    });
+    const courses = await res.json();
+    courseListDiv.innerHTML = courses.map(c => `
+      <div class="card">
+        <b>${c.title}</b> (${c.units})<br/>
+        ${c.description}
+        <div class="card-actions">
+          <button onclick='editCourse(${JSON.stringify(c)})'>Edit</button>
+          <button onclick='deleteCourse("${c._id}")'>Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function loadServices() {
+    const res = await fetch("/api/datauser/services", {
+      headers: { "X-User-Email": email }
+    });
+    const services = await res.json();
+    serviceListDiv.innerHTML = services.map(s => `
+      <div class="card">
+        <b>${s.service_name}</b><br/>
+        ${s.config.base_url}${s.config.path}
+        <div class="card-actions">
+          <button onclick='testService("${s.service_name}")'>Test</button>
+          <button onclick='deleteService("${s.service_name}")'>Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  loadCourses();
+  loadServices();
+
+  async function loadNotifications() {
+    fetch("/api/datauser/notifications", {
+      headers: {
+        "X-User-Email": email  // 你应从 localStorage 或 context 读取 email
+      }
+    })
+
+    const notes = await res.json();
+    if (!Array.isArray(notes)) {
+      document.getElementById("notification-list").innerHTML = "<p>No notifications.</p>";
+      return;
+    }
+
+    document.getElementById("notification-list").innerHTML = notes.map(n => `
+      <div class="card" style="background:${n.read ? '#f5f5f5' : '#fffde7'};">
+        <b>${n.title || 'No Subject'}</b><br/>
+        ${n.message || 'No content'}<br/>
+        <small>${new Date(n.timestamp || n.created_at).toLocaleString()}</small>
+        ${n.read ? "" : `<div class="card-actions">
+          <button onclick='markNotification("${n._id.$oid}")'>Mark as read</button>
+        </div>`}
+      </div>
+    `).join('');
+  }
+
+  async function markNotification(id) {
+    const res = await fetch(`/api/datauser/notifications/mark-read/${id}`, {
+      method: "POST",
+      headers: { "X-User-Email": email }
+    });
+    const result = await res.json();
+    alert(result.message || result.error);
+    loadNotifications();
+  }
+
+  // 初始加载通知
+  loadNotifications();
+  
+
+</script>
+{% endblock %}
